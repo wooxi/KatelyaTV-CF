@@ -107,9 +107,9 @@ pnpm run pages:build          # 末尾会自动执行 Node 兼容性补丁（fix
 wrangler pages deploy .vercel/output/static --project-name katelyatv --branch main
 ```
 
-### 6.（可选）Git 集成自动部署
+### 6. Git 集成自动部署
 
-在 Cloudflare Dashboard 创建 Git 连接的 Pages 项目绑定本仓库，构建设置：
+在 Cloudflare Dashboard 创建 Git 连接的 Pages 项目绑定本仓库（Direct Upload 项目也支持在项目设置中切换为 Git 集成），构建设置：
 
 | 配置项 | 值 |
 |---|---|
@@ -117,8 +117,7 @@ wrangler pages deploy .vercel/output/static --project-name katelyatv --branch ma
 | 构建输出目录 | `.vercel/output/static` |
 | 生产分支 | `main` |
 
-并在环境变量中配置上文的全部变量（构建期变量同样在 Dashboard 添加即可，构建系统会注入）。
-推送 `main` 即自动构建部署；也可使用附带的 [deploy.yml](.github/workflows/deploy.yml)（需配置 `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID` secrets）。
+绑定后推送 `main` 即自动构建部署，无需额外 CI——本仓库不包含 GitHub Actions 部署工作流（Cloudflare Git 集成已覆盖该职责，避免双流水线）。
 
 ## 环境变量
 
@@ -131,6 +130,9 @@ wrangler pages deploy .vercel/output/static --project-name katelyatv --branch ma
 | `NEXTAUTH_URL` | 构建 + 运行 | Dashboard 或 shell | 站点完整 URL |
 | `USERNAME` | 运行 | Dashboard（Secret） | 站长用户名 |
 | `AUTH_PASSWORD` | 运行 | Dashboard（Secret） | 站长密码 / 签名密钥 |
+
+> 站点名称、站点公告、图片代理前缀、豆瓣代理地址支持在 `/admin` 后台直接修改（保存至 D1 即时生效）；
+> 环境变量仅在后台未设置对应值时作为初始回退。
 
 ## 视频源管理
 
@@ -166,6 +168,7 @@ wrangler pages deploy .vercel/output/static --project-name katelyatv --branch ma
 | 4 | 设置页报「获取用户设置失败」 | `d1-init.sql` 的 `user_settings` 表结构与运行时代码（JSON 列 `settings`）不一致，查询报 no such column | 表结构按运行时代码重建，初始化脚本同步修正 |
 | 5 | 站长账号保存设置报「用户不存在」 | 环境变量登录的站长不会写入 `users` 表，而设置写入强制查表 | `user/settings` 路由对 `process.env.USERNAME` 豁免存在性检查 |
 | 6 | 内置采集源全部失效 | 上游随仓库硬编码源清单，域名停摆即全灭 | 源配置与代码解耦，运行时经 D1 / 后台管理 |
+| 7 | 站点公告含上游推广且后台不可修改 | layout 在 D1 模式跳过站点配置、面板在 D1 模式禁用编辑 | 所有存储模式统一读取站点配置；面板解除锁定；环境变量降级为初始回退值 |
 
 ## 目录结构
 

@@ -1373,13 +1373,9 @@ const SiteConfigComponent = ({ config }: { config: AdminConfig | null }) => {
   // 保存状态
   const [saving, setSaving] = useState(false);
 
-  // 检测存储类型是否为 d1 或 upstash
-  const isD1Storage =
-    typeof window !== 'undefined' &&
-    (window as any).RUNTIME_CONFIG?.STORAGE_TYPE === 'd1';
-  const isUpstashStorage =
-    typeof window !== 'undefined' &&
-    (window as any).RUNTIME_CONFIG?.STORAGE_TYPE === 'upstash';
+  // D1 / Upstash 模式下环境变量仅作为回退值，站点配置支持面板编辑并保存到存储后端
+  const isD1Storage = false;
+  const isUpstashStorage = false;
 
   useEffect(() => {
     if (config?.SiteConfig) {
