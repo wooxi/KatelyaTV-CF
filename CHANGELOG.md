@@ -2,6 +2,14 @@
 
 本仓库自 katelya77/KatelyaTV 分叉后针对 Cloudflare 部署链路完全重构。以下仅记录本仓库自身的变更。
 
+## [1.1.0] - 2026-09-06
+
+### 变更
+
+- **源配置与代码分离**：仓库 `config.json` 的 `api_site` 置空，运行时源清单存于 D1 `main_config`，通过 `/admin` 后台上传或 D1 直写维护；公开仓库不再携带任何影视源。
+- **敏感凭据全部迁移至 Cloudflare Dashboard 环境变量**（`USERNAME` / `AUTH_PASSWORD` 以 Secret 类型添加），代码与 CI 中零凭据。
+- README 同步更新：新增「导入视频源」步骤、Git 集成自动部署指引（构建设置与 Dashboard 变量清单）、源管理语义说明。
+
 ## [1.0.0] - 2026-09-06
 
 ### 修复（相对上游）

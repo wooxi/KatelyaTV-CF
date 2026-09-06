@@ -10,8 +10,10 @@
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](./LICENSE)
 
 基于 [katelya77/KatelyaTV](https://github.com/katelya77/KatelyaTV)（MoonTV / LunaTV 系）二次开发，
-**针对 Cloudflare 部署链路完全重构**：修复上游在 Workers 运行时无法部署的核心缺陷，
-内置 54 个经存活实测的采集源（34 常规 + 20 成人），开箱即用。
+**针对 Cloudflare 部署链路完全重构**：修复上游在 Workers 运行时无法部署的核心缺陷。
+
+> **本仓库零影视源、零敏感凭据。**
+> 采集源清单维护于私有仓库，站点凭据全部通过 Cloudflare Dashboard 环境变量注入。
 
 </div>
 
@@ -37,7 +39,7 @@ Next.js 14 (App Router, TypeScript, Tailwind)
         ▼
 Cloudflare Pages Functions  ←─ nodejs_compat v2 (compatibility_date ≥ 2024-09-23)
         │
-        ├── D1 (SQLite)        用户 / 收藏 / 播放记录 / 搜索历史 / 跳过配置 / 站点配置
+        ├── D1 (SQLite)        用户 / 收藏 / 播放记录 / 搜索历史 / 跳过配置 / 站点配置 / 采集源清单
         ├── /api/image-proxy   图片边缘代理
         └── Pages CDN          静态资源 + 边缘缓存
 ```
@@ -70,17 +72,30 @@ wrangler d1 execute katelyatv-db --remote --file=./scripts/d1-init.sql -y
 
 将上一步输出的 `database_id` 填入 `wrangler.toml` 的 **三处** `d1_databases` 配置中。
 
-### 3. 配置站点凭据（Pages Secrets）
+### 3. 导入视频源
 
-```bash
-wrangler pages project create katelyatv --production-branch main   # 首次部署前
-echo 'admin'              | wrangler pages secret put USERNAME --project-name katelyatv
-echo '<你的强密码>'        | wrangler pages secret put AUTH_PASSWORD --project-name katelyatv
-```
+本仓库 `config.json` 的 `api_site` 为空，源清单在运行时存于 D1，任选其一导入：
+
+| 方式 | 操作 | 特点 |
+|---|---|---|
+| **后台热更新（推荐）** | `/admin` → 配置管理 → 上传源清单 JSON | 免重新构建，立即生效 |
+| **D1 直写** | 将源清单合并进 `main_config` 后 `wrangler d1 execute` | 适合批量脚本化 |
+| **构建期内联** | 构建前把源清单覆盖 `config.json` 再 `pnpm run pages:build` | 仅 D1 尚无配置时必需 |
+
+> 首次部署没有源时，站点功能正常但搜索为空——导入源后即可使用。
+
+### 4. 配置站点凭据（Cloudflare Dashboard）
+
+所有敏感凭据均通过 **Cloudflare Dashboard → Pages 项目 → Settings → Environment variables** 添加，不落入代码仓库：
+
+| 变量 | 类型 | 说明 |
+|---|---|---|
+| `USERNAME` | Secret（加密） | 站长用户名 |
+| `AUTH_PASSWORD` | Secret（加密） | 站长密码 / 签名密钥 |
 
 > ⚠️ 不要使用 `PASSWORD` 作为变量名，它是 Cloudflare 保留绑定名（上游已知的坑）。
 
-### 4. 构建与部署
+### 5. 构建与部署
 
 ```bash
 export NEXT_PUBLIC_STORAGE_TYPE=d1
@@ -92,32 +107,37 @@ pnpm run pages:build          # 末尾会自动执行 Node 兼容性补丁（fix
 wrangler pages deploy .vercel/output/static --project-name katelyatv --branch main
 ```
 
-### 5.（可选）GitHub Actions 自动部署
+### 6.（可选）Git 集成自动部署
 
-在仓库 Settings → Secrets 中配置：
+在 Cloudflare Dashboard 创建 Git 连接的 Pages 项目绑定本仓库，构建设置：
 
-| Secret | 说明 |
+| 配置项 | 值 |
 |---|---|
-| `CLOUDFLARE_API_TOKEN` | 需要 `Pages: Edit`、`D1: Edit` 权限 |
-| `CLOUDFLARE_ACCOUNT_ID` | 账户 ID |
+| 构建命令 | `pnpm install --frozen-lockfile && pnpm run pages:build` |
+| 构建输出目录 | `.vercel/output/static` |
+| 生产分支 | `main` |
 
-推送 `main` 即自动构建部署（见 [.github/workflows/deploy.yml](.github/workflows/deploy.yml)）。
+并在环境变量中配置上文的全部变量（构建期变量同样在 Dashboard 添加即可，构建系统会注入）。
+推送 `main` 即自动构建部署；也可使用附带的 [deploy.yml](.github/workflows/deploy.yml)（需配置 `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID` secrets）。
 
 ## 环境变量
 
-| 变量 | 生效阶段 | 说明 |
-|---|---|---|
-| `NEXT_PUBLIC_STORAGE_TYPE` | 构建 | 存储后端，固定 `d1` |
-| `NEXT_PUBLIC_IMAGE_PROXY` | 构建 + 运行 | 图片代理前缀，默认 `/api/image-proxy?url=` |
-| `NEXT_PUBLIC_SITE_NAME` | 构建 | 站点名称 |
-| `NEXT_PUBLIC_ENABLE_REGISTER` | 构建 | 是否开放注册（`true`/`false`） |
-| `NEXTAUTH_URL` | 构建 + 运行 | 站点完整 URL |
-| `USERNAME` | 运行（Secret） | 站长用户名 |
-| `AUTH_PASSWORD` | 运行（Secret） | 站长密码 / 签名密钥 |
+| 变量 | 生效阶段 | 配置位置 | 说明 |
+|---|---|---|---|
+| `NEXT_PUBLIC_STORAGE_TYPE` | 构建 | Dashboard 或 shell | 存储后端，固定 `d1` |
+| `NEXT_PUBLIC_IMAGE_PROXY` | 构建 + 运行 | Dashboard 或 shell | 图片代理前缀，默认 `/api/image-proxy?url=` |
+| `NEXT_PUBLIC_SITE_NAME` | 构建 | Dashboard 或 shell | 站点名称 |
+| `NEXT_PUBLIC_ENABLE_REGISTER` | 构建 | Dashboard | 是否开放注册（`true`/`false`） |
+| `NEXTAUTH_URL` | 构建 + 运行 | Dashboard 或 shell | 站点完整 URL |
+| `USERNAME` | 运行 | Dashboard（Secret） | 站长用户名 |
+| `AUTH_PASSWORD` | 运行 | Dashboard（Secret） | 站长密码 / 签名密钥 |
 
-## 视频源配置
+## 视频源管理
 
-编辑 [`config.json`](config.json)（构建时经 `gen:runtime` 编译进产物）：
+**源清单与代码分离**。运行时生效的源清单 = **D1 `main_config` 存量 ∪ 代码仓库 `config.json` 新增项**：
+
+- D1 里已有的 key 以 D1 为准；文件里新出现的 key 自动追加
+- 源格式（苹果 CMS v10 接口）：
 
 ```json
 {
@@ -132,10 +152,9 @@ wrangler pages deploy .vercel/output/static --project-name katelyatv --branch ma
 }
 ```
 
-- `api`：苹果 CMS v10 采集接口（`api.php/provide/vod`）
-- `is_adult`：`true` 的源会被用户级成人过滤隔离到独立分组
-- 改动源后需重新构建部署；站点级源清单以 **D1 `main_config` ∪ 文件新增项** 合并语义生效
-- 本仓库自带 54 个源均为 2026-09 实测存活，源站失效属常态，按上述步骤增删即可
+- `is_adult: true` 的源受用户级成人过滤管控（默认隔离到独立分组）
+- 源站失效属常态：用 `/admin` 后台增删，或维护一份私有源仓库（格式即 `config.json`），批量更新时后台重新上传
+- 改动 `config.json` 的方式需要重新构建部署；后台方式即时生效
 
 ## 相对上游的修复
 
@@ -146,12 +165,12 @@ wrangler pages deploy .vercel/output/static --project-name katelyatv --branch ma
 | 3 | 无 Cookie 客户端（OrionTV 等）图片失败 | middleware 未放行 `/api/image-proxy` | 加入 `shouldSkipAuth` 白名单 |
 | 4 | 设置页报「获取用户设置失败」 | `d1-init.sql` 的 `user_settings` 表结构与运行时代码（JSON 列 `settings`）不一致，查询报 no such column | 表结构按运行时代码重建，初始化脚本同步修正 |
 | 5 | 站长账号保存设置报「用户不存在」 | 环境变量登录的站长不会写入 `users` 表，而设置写入强制查表 | `user/settings` 路由对 `process.env.USERNAME` 豁免存在性检查 |
-| 6 | 内置采集源全部失效 | 上游随仓库的 5 个源域名已停摆 | 全量替换为实测存活的 54 个源，剔除全部死链 |
+| 6 | 内置采集源全部失效 | 上游随仓库硬编码源清单，域名停摆即全灭 | 源配置与代码解耦，运行时经 D1 / 后台管理 |
 
 ## 目录结构
 
 ```
-├── config.json                 # 采集源配置（构建时编译）
+├── config.json                 # 采集源配置（本仓库 api_site 为空，运行时以 D1 为准）
 ├── wrangler.toml               # Cloudflare Pages / D1 绑定与环境变量
 ├── scripts/
 │   ├── d1-init.sql             # D1 初始化（7 张表，与运行时代码严格一致）
@@ -184,9 +203,10 @@ wrangler pages deploy .vercel/output/static --project-name katelyatv --branch ma
 </details>
 
 <details>
-<summary>换个采集源要重新部署吗？</summary>
+<summary>搜索没有结果？</summary>
 
-是。`config.json` 在构建时编译进产物；运行时新增的源优先走 `/admin` 后台，改文件的方式适合批量维护。
+先确认已导入采集源（见「快速部署 · 第 3 步」）；再检查源是否存活——苹果 CMS 采集站域名更迭频繁，
+建议在 `/admin` 后台删旧换新。
 </details>
 
 <details>
@@ -199,7 +219,7 @@ wrangler pages deploy .vercel/output/static --project-name katelyatv --branch ma
 
 - [MoonTV](https://github.com/MoonTechLab/LunaTV) / [LunaTV](https://github.com/sjnhnp/LunaTV) — 原始项目
 - [katelya77/KatelyaTV](https://github.com/katelya77/KatelyaTV) — 二次开发上游
-- [senshinya/MoonTVplus](https://github.com/senshinya/MoonTVplus)、[OrionTV](https://github.com/zimplexing/OrionTV) — 生态参考
+- [OrionTV](https://github.com/zimplexing/OrionTV) — 生态参考
 
 ## 免责声明
 
